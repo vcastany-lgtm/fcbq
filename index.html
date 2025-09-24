@@ -45,8 +45,8 @@ Files in this single doc (copy them into your repo):
   </style>
 </head>
 <body>
-  <h1>🏀 Generador d'estadístiques +/-</h1>
-  <p class="help">Enganxa la URL del partit de <strong>basquetcatala.cat</strong>  i prem <em>Crear estadístiques</em>.</p>
+  <h1>🏀 Generador d'estadístiques</h1>
+  <p class="help">Enganxa la URL del partit de <strong>basquetcatala.cat</strong> (o només l'ID) i prem <em>Crear estadístiques</em>.</p>
   <div class="card">
     <form id="form">
       <input id="matchInput" type="text" placeholder="https://www.basquetcatala.cat/estadistiques/2025/68d03f5084f66900011951b0" required />
@@ -54,7 +54,11 @@ Files in this single doc (copy them into your repo):
     </form>
     <div id="state"></div>
   </div>
+
   <div id="statsContainer"></div>
+
+  <p class="foot">Font de dades: <code>msstats.optimalwayconsulting.com</code>. Render segons l'script proporcionat.</p>
+
   <script>
     const form = document.getElementById('form');
     const input = document.getElementById('matchInput');

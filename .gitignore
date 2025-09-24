@@ -1,0 +1,9 @@
+# Node / tooling artifacts
+node_modules/
+package-lock.json
+package.json
+local-server.mjs
+
+# Misc
+*.log
+.DS_Store
