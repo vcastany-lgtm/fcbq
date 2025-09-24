@@ -1,0 +1,200 @@
+<!--
+Project: Basket Stats Web
+Files in this single doc (copy them into your repo):
+- index.html (root)
+- /api/stats.js (create the folder and file)
+-->
+
+<!-- ========================= index.html ========================= -->
+<!doctype html>
+<html lang="ca">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Estadístiques de bàsquet – Generador</title>
+  <style>
+    :root{
+      --bg:#f8f9fa;--fg:#111;--muted:#6c757d;--primary:#007bff;--border:#d0d5dd;
+      --ok:#1a7f37;--bad:#d63939
+    }
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:2rem;}
+    h1{margin:0 0 1rem 0;font-weight:800;}
+    p.help{color:var(--muted);margin:.25rem 0 1rem}
+    .card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:1rem;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    form{display:flex;gap:.5rem;flex-wrap:wrap}
+    input[type="text"]{flex:1;min-width:280px;padding:.75rem;border:1px solid var(--border);border-radius:10px}
+    button{padding:.75rem 1rem;border:none;border-radius:10px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .error{background:#fff1f0;border:1px solid #ffd0d0;color:#8a1f1f;padding:.75rem;border-radius:10px;margin-top:1rem}
+    .loading{display:flex;align-items:center;gap:.5rem;margin-top:1rem;color:var(--muted)}
+    .spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* Table styles mirroring the bookmarklet */
+    #statsContainer{margin-top:1rem}
+    .team-block{margin:1.5rem 0}
+    .team-block h2{margin:.5rem 0}
+    table{width:100%;border-collapse:collapse;margin-top:.75rem}
+    th,td{border:1px solid #ccc;padding:.5em;text-align:left}
+    th{background:var(--primary);color:#fff}
+    .plus-minus.positive{color:var(--ok)}
+    .plus-minus.negative{color:var(--bad)}
+    .totals{font-weight:700}
+    .foot{color:var(--muted);font-size:.9rem;margin-top:1rem}
+  </style>
+</head>
+<body>
+  <h1>🏀 Generador d'estadístiques</h1>
+  <p class="help">Enganxa la URL del partit de <strong>basquetcatala.cat</strong> (o només l'ID) i prem <em>Crear estadístiques</em>.</p>
+  <div class="card">
+    <form id="form">
+      <input id="matchInput" type="text" placeholder="https://www.basquetcatala.cat/estadistiques/2025/68d03f5084f66900011951b0" required />
+      <button id="goBtn" type="submit">Crear estadístiques</button>
+    </form>
+    <div id="state"></div>
+  </div>
+
+  <div id="statsContainer"></div>
+
+  <p class="foot">Font de dades: <code>msstats.optimalwayconsulting.com</code>. Render segons l'script proporcionat.</p>
+
+  <script>
+    const form = document.getElementById('form');
+    const input = document.getElementById('matchInput');
+    const goBtn = document.getElementById('goBtn');
+    const state = document.getElementById('state');
+    const container = document.getElementById('statsContainer');
+
+    function getIdFromInput(raw){
+      let val = raw.trim();
+      try{
+        if(val.startsWith('http')){
+          const u = new URL(val);
+          const segs = u.pathname.split('/').filter(Boolean);
+          return segs[segs.length-1];
+        }
+      }catch(_){/* fall-through */}
+      // fallback: assume raw is already an id
+      return val;
+    }
+
+    function showLoading(){
+      state.innerHTML = '<div class="loading"><div class="spinner"></div><span>Carregant dades…</span></div>';
+      goBtn.disabled = true;
+    }
+    function clearState(){ state.innerHTML = ''; goBtn.disabled = false; }
+    function showError(msg){ state.innerHTML = `<div class="error">${msg}</div>`; goBtn.disabled = false; }
+
+    function computePlusMinus(player){
+      if(!player || !Array.isArray(player.inOutsList)) return 0;
+      let total = 0; let inValue = null;
+      player.inOutsList.forEach(ev => {
+        if(ev.type === 'IN_TYPE'){
+          inValue = ev.pointDiff;
+        } else if(ev.type === 'OUT_TYPE' && inValue !== null){
+          total += (ev.pointDiff - inValue);
+          inValue = null;
+        }
+      });
+      return total;
+    }
+
+    function sumTeamPoints(team){
+      return (team.players||[]).reduce((acc,p)=>acc + (p.data?.score||0), 0);
+    }
+
+    function renderTeam(team){
+      const teamPoints = sumTeamPoints(team);
+      let html = `<div class="team-block">`;
+      html += `<h2>🏀 ${team.name} - ${teamPoints} punts</h2>`;
+      html += `<table><thead><tr>
+        <th>#</th><th>Jugadora</th><th>+/-</th><th>Min</th><th>Punts</th>
+        <th>TL</th><th>T2</th><th>T3</th><th>FR</th><th>VAL</th>
+      </tr></thead><tbody>`;
+
+      (team.players||[]).forEach(p => {
+        const pm = computePlusMinus(p);
+        const cls = pm >= 0 ? 'positive' : 'negative';
+        html += `<tr>
+          <td>${p.dorsal || p.actorId || ''}</td>
+          <td>${p.name || ''}</td>
+          <td class="plus-minus ${cls}">${pm >= 0 ? '+' : ''}${pm}</td>
+          <td>${p.timePlayed || 0}</td>
+          <td>${p.data?.score || 0}</td>
+          <td>${p.data?.shotsOfOneSuccessful || 0}/${p.data?.shotsOfOneAttempted || 0}</td>
+          <td>${p.data?.shotsOfTwoSuccessful || 0}/${p.data?.shotsOfTwoAttempted || 0}</td>
+          <td>${p.data?.shotsOfThreeSuccessful || 0}/${p.data?.shotsOfThreeAttempted || 0}</td>
+          <td>${p.data?.faults || 0}</td>
+          <td>${p.data?.valoration || 0}</td>
+        </tr>`;
+      });
+
+      html += `</tbody></table></div>`;
+      return html;
+    }
+
+    async function fetchStats(matchId){
+      const url = `/api/stats?matchId=${encodeURIComponent(matchId)}&currentSeason=true`;
+      const res = await fetch(url);
+      if(!res.ok) throw new Error(`No s'han pogut carregar les dades (${res.status})`);
+      return res.json();
+    }
+
+    form.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      container.innerHTML = '';
+      const id = getIdFromInput(input.value);
+      if(!id){ showError('Introdueix una URL vàlida o un ID.'); return; }
+      showLoading();
+      try{
+        const data = await fetchStats(id);
+        clearState();
+        if(!data || !Array.isArray(data.teams)){
+          showError('Resposta inesperada del servidor.');
+          return;
+        }
+        let out = '';
+        data.teams.forEach(team => { out += renderTeam(team); });
+        container.innerHTML = out || '<p>No hi ha dades.</p>';
+      }catch(err){
+        showError(err.message || 'Error desconegut.');
+      }
+    });
+  </script>
+</body>
+</html>
+
+
+<!-- ========================= /api/stats.js ========================= -->
+<script type="text/plain" data-filename="/api/stats.js">
+/**
+ * Vercel Serverless Function
+ * Proxy a msstats.optimalwayconsulting.com per evitar problemes de CORS
+ */
+export default async function handler(req, res) {
+  try {
+    if (req.method !== 'GET') {
+      res.setHeader('Allow', 'GET');
+      return res.status(405).json({ error: 'Mètode no permès' });
+    }
+    const { matchId, currentSeason = 'true' } = req.query || {};
+    if (!matchId) return res.status(400).json({ error: 'Falta el paràmetre matchId' });
+
+    const upstream = `https://msstats.optimalwayconsulting.com/v1/fcbq/getJsonWithMatchStats/${encodeURIComponent(matchId)}?currentSeason=${encodeURIComponent(currentSeason)}`;
+    const r = await fetch(upstream, { headers: { 'accept': 'application/json' } });
+    if (!r.ok) {
+      return res.status(r.status).json({ error: `Error de l'origen (${r.status})` });
+    }
+    const json = await r.json();
+
+    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(200).json(json);
+  } catch (err) {
+    return res.status(500).json({ error: 'Error intern', detail: String(err?.message || err) });
+  }
+}
+</script>
